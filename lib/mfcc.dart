@@ -15,7 +15,7 @@ You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <http://www.gnu.org/licenses/>.
 */
 
-import 'package:fft/fft.dart';
+import 'package:fftea/fftea.dart';
 import 'dart:math';
 import 'dart:async';
 
@@ -56,34 +56,34 @@ double safe_log(double value) {
 /// 5. (Optional) Replace first value by the window log-Energy.
 class MFCC {
   /// FFT size
-  int _fftSize;
+  int _fftSize = 0;
 
   /// The number of mel filters
-  int _numFilters;
+  int _numFilters = 0;
 
   /// Number of output values
-  int _numCoefs;
+  int _numCoefs = 0;
 
   /// The mel filters triangle windows indexes, generated once
-  List<List<double>> _fbanks;
+  List<List<double>> _fbanks = [];
 
   /// If set to true, replace mfcc first value with spectrum logenergy
-  bool _energy;
+  bool _energy = false;
 
   /// PreEmphasis parameters
-  bool _useEmphasis;
+  bool _useEmphasis = false;
 
   /// Emphasis factor
-  double _emphasis;
+  double _emphasis = 0;
 
   /// Previous frame last value for continue preEmphasis
   num _lastValue = 0.0;
 
   /// Stream input
-  StreamSubscription<List<num>> _audioInput;
+  StreamSubscription<List<num>>? _audioInput;
 
   /// Stream output
-  StreamController<List<double>> _featureStream;
+  StreamController<List<double>>? _featureStream;
 
   MFCC(int sampleRate, int fftSize, int numFilters, int numCoefs,
       {bool energy = true, double preEmphasis = 0.97}) {
@@ -104,7 +104,7 @@ class MFCC {
   /// Apply preEmphasis filter on given signal.
   static List<double> preEmphasis(List<num> signal, double emphasisFactor,
       {num lastValue = 0.0}) {
-    var empSignal = List<double>(signal.length);
+    var empSignal = List<double>.filled(signal.length, 0);
     var swSig = [lastValue] + signal.sublist(0, signal.length - 1);
     for (var i = 0; i < signal.length; i++) {
       empSignal[i] = signal[i] - swSig[i] * emphasisFactor;
@@ -126,7 +126,7 @@ class MFCC {
     var grid_indexes =
         grid_hertz.map((v) => (v * n_fft / samplerate).floor()).toList();
 
-    var filters = List<List<double>>(num_filt);
+    var filters = List<List<double>>.filled(num_filt, []);
     for (var i = 0; i < num_filt; i++) {
       var left = List<double>.generate(grid_indexes[i + 1] - grid_indexes[i],
           (v) => v / (grid_indexes[i + 1] - grid_indexes[i]));
@@ -149,10 +149,14 @@ class MFCC {
 
   /// Returns the power spectrum of a given [frame].
   static List<double> power_spectrum(List<double> frame, fft_size) {
-    var fft = FFT().Transform(frame.sublist(0, fft_size));
-    return fft
+    final fft = FFT(fft_size);
+    final freq = fft.realFft(frame.sublist(0, fft_size));
+    
+    return freq
         .sublist(0, (fft_size / 2 + 1).round())
-        .map((v) => (pow(v.real, 2) + pow(v.imaginary, 2)) / fft_size)
+        // .map((v) => (pow(v.real, 2) + pow(v.imaginary, 2)) / fft_size)
+        // v.x is real part, v.y is imaginary part
+        .map((v) => (pow(v.x, 2) + pow(v.y, 2)) / fft_size)
         .toList();
   }
 
@@ -160,13 +164,13 @@ class MFCC {
   static List<double> mel_coefs(
       List<double> power_spec, List<List<double>> filters) {
     var n_filt = filters.length;
-    var result = List<double>(n_filt);
+    var result = List<double>.filled(n_filt, 0);
     for (var i = 0; i < n_filt; i++) {
       num sum = 0;
       for (var j = 0; j < power_spec.length; j++) {
         sum += power_spec[j] * filters[i][j];
       }
-      result[i] = sum;
+      result[i] = sum as double;
     }
     return result.map((v) => safe_log(v)).toList();
   }
@@ -183,7 +187,7 @@ class MFCC {
   /// - `f = sqrt(1/(2*N)) otherwise.`
   ///
   static List<double> dct(List<double> x, bool norm) {
-    var result = List<double>(x.length);
+    var result = List<double>.filled(x.length, 0);
     var N = x.length;
     var sum = 0.0;
     var scaling_factor0 = sqrt(1 / (4 * N));
@@ -226,10 +230,10 @@ class MFCC {
   }
 
   /// Returns the MFCC values of a list of frames
-  List<List<double>> process_frames(List<List<num>> frames) {
-    var mfccs = List<List<double>>();
+  List<List<double>> process_frames(List<List<double>> frames) {
+    List<List<double>> mfccs = [];
     for (List<double> frame in frames) {
-      mfccs.add(process_frame(frame));
+      mfccs.add(process_frame(frame)); 
     }
     return mfccs;
   }
@@ -253,7 +257,7 @@ class MFCC {
   ///
   /// Throws [ValueError] if any value is off limit.
   static List<List<double>> mfccFeats(
-      List<num> signal,
+      List<double> signal,
       int sampleRate,
       int windowLength,
       int windowStride,
@@ -286,10 +290,10 @@ class MFCC {
     return processor.process_frames(frames);
   }
 
-  static List<List<num>> splitSignal(
-      List<num> signal, int windowLength, int windowStride) {
+  static List<List<double>> splitSignal(
+      List<double> signal, int windowLength, int windowStride) {
     var nFrames = ((signal.length - windowLength) / windowStride).floor() + 1;
-    var frames = List<List<num>>(nFrames);
+    var frames = List<List<double>>.filled(nFrames, []);
     for (var i = 0; i < nFrames; i++) {
       frames[i] =
           signal.sublist(i * windowStride, (i * windowStride) + windowLength);
@@ -300,13 +304,14 @@ class MFCC {
   /// Set input as Stream<List<num>>.
   /// Returns a StreamController<List<double>> on which features will be pushed.
   /// [audioInput] must provide frame of desired length.
-  StreamController<List<double>> setStream(Stream<List<num>> audioInput) {
+  StreamController<List<double>> setStream(Stream<List<double>> audioInput) {
     cancelStream();
     _featureStream = StreamController<List<double>>.broadcast();
     _audioInput = audioInput.listen((frame) {
-      _featureStream.add(process_frame(frame));
+      _featureStream!.add(process_frame(frame));
     });
-    return _featureStream;
+    
+    return _featureStream!;
   }
 
   /// Cancel streamSubscription and closes egress feature stream.

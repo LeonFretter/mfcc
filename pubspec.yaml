@@ -4,11 +4,10 @@ homepage: https://github.com/Lokhozt/mfcc
 description: A library written in Dart to extract Mel-Frequency Cepstral Coefficients (MFCCs) from a signal.
 
 environment:
-  sdk: '>=2.5.0 <3.0.0'
-
-dependencies:
-  fft: ^0.2.0
+  sdk: ^3.8.0
 
 dev_dependencies:
-  pedantic: ^1.8.0
+  lints: ^6.0.0
   test: ^1.6.0
+dependencies:
+  fftea: ^1.5.0+1
